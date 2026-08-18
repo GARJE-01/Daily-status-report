@@ -1,0 +1,436 @@
+<script>
+  // ---- Backend bridge (google.script.run, since frontend and backend now
+  // share the same Apps Script project) ----
+  function callBackend(action, payload) {
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function (error) {
+          reject(new Error(error && error.message ? error.message : String(error)));
+        })
+        .runAction(action, payload || {});
+    });
+  }
+
+  var Api = {
+    getDrafts: function () {
+      return callBackend('getDrafts');
+    },
+    getConfig: function () {
+      return callBackend('getConfig');
+    },
+    saveConfig: function (config) {
+      return callBackend('saveConfig', config);
+    },
+    previewEmail: function (report) {
+      return callBackend('previewEmail', report);
+    },
+    sendEmail: function (report) {
+      return callBackend('sendEmail', report);
+    },
+    scheduleEmail: function (report) {
+      return callBackend('scheduleEmail', report);
+    },
+    getScheduledEmail: function () {
+      return callBackend('getScheduledEmail');
+    },
+    cancelScheduledEmail: function () {
+      return callBackend('cancelScheduledEmail');
+    }
+  };
+
+  // ---- DOM helpers ----
+  function qs(selector) {
+    return document.querySelector(selector);
+  }
+
+  function showLoading() {
+    qs('#loading-overlay').classList.remove('hidden');
+  }
+
+  function hideLoading() {
+    qs('#loading-overlay').classList.add('hidden');
+  }
+
+  function showToast(message, isError) {
+    var toast = qs('#toast');
+    toast.textContent = message;
+    toast.classList.toggle('toast-error', !!isError);
+    toast.classList.remove('hidden');
+    toast.classList.add('toast-visible');
+
+    window.setTimeout(function () {
+      toast.classList.remove('toast-visible');
+      toast.classList.add('hidden');
+    }, 3000);
+  }
+
+  function showScreen(screenId) {
+    ['setup-screen', 'report-screen'].forEach(function (id) {
+      qs('#' + id).classList.toggle('hidden', id !== screenId);
+    });
+  }
+
+  // ---- Setup screen ----
+  function initSetupScreen() {
+    qs('#save-config-btn').addEventListener('click', handleSaveConfig);
+  }
+
+  function openSetupScreen() {
+    showScreen('setup-screen');
+    showLoading();
+
+    return Api.getConfig()
+      .then(function (response) {
+        var existingConfig = response.success ? response.data : null;
+        applyExistingConfig(existingConfig);
+        return populateDraftOptions(existingConfig);
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function applyExistingConfig(config) {
+    var heading = qs('#setup-heading');
+    var subtitle = qs('#setup-subtitle');
+
+    if (config) {
+      heading.textContent = 'Update Configuration';
+      subtitle.textContent = 'Change your Gmail draft or recipients.';
+      qs('#to-input').value = config.to || '';
+      qs('#cc-input').value = config.cc || '';
+    } else {
+      heading.textContent = 'Set Up Daily Status Report';
+      subtitle.textContent = 'This only needs to be done once.';
+      qs('#to-input').value = '';
+      qs('#cc-input').value = '';
+    }
+  }
+
+  function populateDraftOptions(existingConfig) {
+    var select = qs('#draft-select');
+    select.innerHTML = '<option value="" disabled selected>Select a draft&hellip;</option>';
+
+    return Api.getDrafts().then(function (response) {
+      if (!response.success) {
+        showToast(response.error.message, true);
+        return;
+      }
+
+      response.data.drafts.forEach(function (draft) {
+        var option = document.createElement('option');
+        option.value = draft.id;
+        option.textContent = draft.subject;
+
+        if (existingConfig && existingConfig.draftId === draft.id) {
+          option.selected = true;
+        }
+
+        select.appendChild(option);
+      });
+    });
+  }
+
+  function handleSaveConfig() {
+    var config = {
+      draftId: qs('#draft-select').value,
+      to: qs('#to-input').value.trim(),
+      cc: qs('#cc-input').value.trim()
+    };
+
+    showLoading();
+
+    Api.saveConfig(config)
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+
+        showToast(response.message);
+        openReportScreen();
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  // ---- Report screen ----
+  function initReportScreen() {
+    qs('#preview-btn').addEventListener('click', handlePreview);
+    qs('#schedule-btn').addEventListener('click', handleSchedule);
+    qs('#send-btn').addEventListener('click', handleSend);
+    qs('#edit-config-btn').addEventListener('click', openSetupScreen);
+    qs('#preview-close-btn').addEventListener('click', closePreviewModal);
+    qs('#preview-schedule-btn').addEventListener('click', handleScheduleFromPreview);
+    qs('#preview-send-btn').addEventListener('click', handleSendFromPreview);
+    qs('#cancel-schedule-btn').addEventListener('click', handleCancelSchedule);
+  }
+
+  function openReportScreen() {
+    showScreen('report-screen');
+    qs('#today-date-input').value = getDefaultTodayText();
+    qs('#tomorrow-date-input').value = getDefaultTomorrowText();
+
+    var today = new Date();
+    var isoDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    qs('#schedule-date-input').value = isoDate;
+
+    checkScheduleStatus();
+  }
+
+  // Defaults to the next working day: Saturday/Sunday roll forward to Monday.
+  // Both fields stay editable, since "tomorrow" isn't always the right label
+  // (weekends, holidays, etc.).
+  function getDefaultTodayText() {
+    return formatDisplayDate(new Date());
+  }
+
+  function getDefaultTomorrowText() {
+    var date = new Date();
+    date.setDate(date.getDate() + 1);
+
+    var dayOfWeek = date.getDay();
+    if (dayOfWeek === 6) {
+      date.setDate(date.getDate() + 2);
+    } else if (dayOfWeek === 0) {
+      date.setDate(date.getDate() + 1);
+    }
+
+    return formatDisplayDate(date);
+  }
+
+  function formatDisplayDate(date) {
+    var day = String(date.getDate()).padStart(2, '0');
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    return day + '-' + month + '-' + date.getFullYear();
+  }
+
+  function getReportInput() {
+    return {
+      todayDate: qs('#today-date-input').value.trim(),
+      tomorrowDate: qs('#tomorrow-date-input').value.trim(),
+      taskList: qs('#task-list-input').value.trim(),
+      plannedTask: qs('#planned-task-input').value.trim()
+    };
+  }
+
+  function handlePreview() {
+    showLoading();
+
+    Api.previewEmail(getReportInput())
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showPreviewModal(response.data);
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function handleSend() {
+    showLoading();
+
+    Api.sendEmail(getReportInput())
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showToast(response.message);
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function showPreviewModal(email) {
+    var bodyFrame = qs('#preview-body');
+
+    qs('#preview-subject').value = email.subject;
+
+    bodyFrame.addEventListener('load', function onFrameLoad() {
+      bodyFrame.contentDocument.body.contentEditable = 'true';
+      bodyFrame.removeEventListener('load', onFrameLoad);
+    });
+    bodyFrame.srcdoc = email.body;
+
+    qs('#preview-modal').classList.remove('hidden');
+  }
+
+  function handleSendFromPreview() {
+    var bodyFrame = qs('#preview-body');
+    var subject = qs('#preview-subject').value.trim();
+    var body = bodyFrame.contentDocument.body.innerHTML;
+
+    closePreviewModal();
+    sendRenderedEmail(subject, body);
+  }
+
+  function sendRenderedEmail(subject, body) {
+    showLoading();
+
+    Api.sendEmail({ subject: subject, body: body })
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showToast(response.message);
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function closePreviewModal() {
+    qs('#preview-modal').classList.add('hidden');
+  }
+
+  // ---- Scheduling logic ----
+  function getScheduleTimestamp() {
+    var dateVal = qs('#schedule-date-input').value;
+    var timeVal = qs('#schedule-time-input').value || '17:00';
+    if (!dateVal) return null;
+
+    var isoStr = dateVal + 'T' + timeVal + ':00';
+    var targetDate = new Date(isoStr);
+    return isNaN(targetDate.getTime()) ? null : targetDate.toISOString();
+  }
+
+  function handleSchedule() {
+    var scheduledAt = getScheduleTimestamp();
+    if (!scheduledAt) {
+      showToast('Please select a valid schedule date and time.', true);
+      return;
+    }
+
+    var payload = getReportInput();
+    payload.scheduledAt = scheduledAt;
+
+    showLoading();
+    Api.scheduleEmail(payload)
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showToast(response.message);
+        checkScheduleStatus();
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function handleScheduleFromPreview() {
+    var scheduledAt = getScheduleTimestamp();
+    if (!scheduledAt) {
+      showToast('Please select a valid schedule date and time.', true);
+      return;
+    }
+
+    var bodyFrame = qs('#preview-body');
+    var subject = qs('#preview-subject').value.trim();
+    var body = bodyFrame.contentDocument.body.innerHTML;
+
+    closePreviewModal();
+
+    showLoading();
+    Api.scheduleEmail({ subject: subject, body: body, scheduledAt: scheduledAt })
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showToast(response.message);
+        checkScheduleStatus();
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  function checkScheduleStatus() {
+    return Api.getScheduledEmail()
+      .then(function (response) {
+        var banner = qs('#schedule-banner');
+        if (response.success && response.data) {
+          var dateObj = new Date(response.data.scheduledAt);
+          qs('#schedule-banner-text').textContent = 'Scheduled for ' + dateObj.toLocaleString();
+          banner.classList.remove('hidden');
+        } else {
+          banner.classList.add('hidden');
+        }
+      })
+      .catch(function () {
+        qs('#schedule-banner').classList.add('hidden');
+      });
+  }
+
+  function handleCancelSchedule() {
+    showLoading();
+    Api.cancelScheduledEmail()
+      .then(function (response) {
+        if (!response.success) {
+          showToast(response.error.message, true);
+          return;
+        }
+        showToast(response.message);
+        checkScheduleStatus();
+      })
+      .catch(function (error) {
+        showToast(error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  }
+
+  // ---- App bootstrap ----
+  document.addEventListener('DOMContentLoaded', function () {
+    initSetupScreen();
+    initReportScreen();
+
+    showLoading();
+
+    Api.getConfig()
+      .then(function (response) {
+        if (response.success && response.data) {
+          return openReportScreen();
+        }
+        return openSetupScreen();
+      })
+      .catch(function (error) {
+        showToast('Could not reach the backend: ' + error.message, true);
+      })
+      .then(function () {
+        hideLoading();
+      });
+  });
+</script>

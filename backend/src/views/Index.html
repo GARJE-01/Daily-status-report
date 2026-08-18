@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('src/views/Stylesheet'); ?>
+</head>
+<body>
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="app">
+    <section class="screen hidden" id="setup-screen">
+      <h1 id="setup-heading">Set Up Daily Status Report</h1>
+      <p class="screen-subtitle" id="setup-subtitle">This only needs to be done once.</p>
+
+      <label for="draft-select">Gmail Draft</label>
+      <select id="draft-select">
+        <option value="" disabled selected>Select a draft&hellip;</option>
+      </select>
+
+      <label for="to-input">To</label>
+      <input id="to-input" type="text" placeholder="name@example.com, name2@example.com" />
+
+      <label for="cc-input">Cc (optional)</label>
+      <input id="cc-input" type="text" placeholder="name@example.com" />
+
+      <button id="save-config-btn" class="btn btn-primary">Save Configuration</button>
+    </section>
+
+    <section class="screen hidden" id="report-screen">
+      <h1>Daily Status Report</h1>
+
+      <div id="schedule-banner" class="schedule-banner hidden">
+        <div class="schedule-banner-content">
+          <span class="schedule-icon">⏰</span>
+          <div>
+            <strong>Email Scheduled</strong>
+            <p id="schedule-banner-text"></p>
+          </div>
+        </div>
+        <button id="cancel-schedule-btn" class="btn btn-outline-danger">Cancel Schedule</button>
+      </div>
+
+      <label for="today-date-input">Today's Date</label>
+      <input id="today-date-input" type="text" />
+
+      <label for="tomorrow-date-input">Tomorrow's Date</label>
+      <input id="tomorrow-date-input" type="text" />
+
+      <label for="task-list-input">Today's Activities</label>
+      <textarea id="task-list-input" rows="6" placeholder="What did you work on today?"></textarea>
+
+      <label for="planned-task-input">Planned Steps (optional)</label>
+      <textarea id="planned-task-input" rows="4" placeholder="What's planned for tomorrow?"></textarea>
+
+      <div class="schedule-row">
+        <div class="field-group">
+          <label for="schedule-date-input">Schedule Date</label>
+          <input id="schedule-date-input" type="date" />
+        </div>
+        <div class="field-group">
+          <label for="schedule-time-input">Schedule Time</label>
+          <input id="schedule-time-input" type="time" value="17:00" />
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="preview-btn" class="btn btn-secondary">Preview Email</button>
+        <button id="schedule-btn" class="btn btn-schedule">Schedule Email</button>
+        <button id="send-btn" class="btn btn-primary">Send Email</button>
+      </div>
+
+      <button id="edit-config-btn" class="btn-link">Change Gmail draft or recipients</button>
+    </section>
+  </div>
+
+  <div class="modal-overlay hidden" id="preview-modal">
+    <div class="modal">
+      <header class="modal-header">
+        <input id="preview-subject" class="preview-subject-input" type="text" />
+        <button id="preview-close-btn" class="btn-icon" aria-label="Close preview">&times;</button>
+      </header>
+
+      <p class="preview-hint">You can edit the subject and body below before sending or scheduling.</p>
+
+      <iframe id="preview-body" class="preview-frame" sandbox="allow-same-origin"></iframe>
+
+      <footer class="modal-footer">
+        <button id="preview-schedule-btn" class="btn btn-schedule">Schedule Email</button>
+        <button id="preview-send-btn" class="btn btn-primary">Send Email</button>
+      </footer>
+    </div>
+  </div>
+
+  <?!= include('src/views/JavaScript'); ?>
+</body>
+</html>

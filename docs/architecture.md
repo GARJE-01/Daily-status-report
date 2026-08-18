@@ -1,0 +1,1 @@
+# Architecture\n\nThis project is organized by responsibility into bootstrap, router, controllers, services, repositories, utilities, and models.\n

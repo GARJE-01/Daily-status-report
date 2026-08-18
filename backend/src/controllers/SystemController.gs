@@ -1,0 +1,3 @@
+function healthCheckController() {
+  return healthCheck();
+}
