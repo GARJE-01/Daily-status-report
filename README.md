@@ -211,4 +211,4 @@ This project is licensed under the [MIT License](LICENSE).
 ## 👨‍💻 Author
 
 Developed by **[GARJE-01](https://github.com/GARJE-01)**.  
-Repository: [https://github.com/GARJE-01/Daily-status-report-.git](https://github.com/GARJE-01/Daily-status-report-.git)
+Repository: [https://github.com/GARJE-01/Daily-status-report-.git](https://github.com/GARJE-01/Daily-status-report.git)
